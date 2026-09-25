@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ky">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MedKyrgyz AI — кыргыз жана орус тилдериндеги медициналык маалымат боюнча AI жардамчы." />
+  <meta name="theme-color" content="#0f766e" />
+  <title>MedKyrgyz AI</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ================= Header ================= -->
+    <header class="app-header">
+      <div class="brand">
+        <img class="brand__logo" src="assets/logo.svg" alt="" width="40" height="40" />
+        <div>
+          <h1 class="brand__title">MedKyrgyz AI</h1>
+          <p class="brand__subtitle" data-i18n="appSubtitle">Медициналык маалымат боюнча жардамчы</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <span id="status-dot" class="status-dot" title="Backend status" aria-hidden="true"></span>
+
+        <label class="visually-hidden" for="language-select" data-i18n="languageLabel">Тил</label>
+        <select id="language-select" class="language-select">
+          <option value="ky">Кыргызча</option>
+          <option value="ru">Русский</option>
+        </select>
+
+        <button id="new-chat-btn" class="btn btn--ghost" type="button">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span data-i18n="newChat">Жаңы маек</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Always-visible emergency numbers -->
+    <div class="emergency-strip" role="note">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
+      <span data-i18n="emergencyBanner">Шашылыш учурда: 103 же 112</span>
+    </div>
+
+    <!-- ================= Chat ================= -->
+    <main class="chat">
+      <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden>
+        <span id="error-text" class="error-banner__text"></span>
+        <div class="error-banner__actions">
+          <button id="retry-btn" class="btn btn--small" type="button" data-i18n="retry">Кайра аракет кылуу</button>
+          <button id="dismiss-error-btn" class="btn btn--small btn--ghost" type="button" data-i18n="dismiss">Жабуу</button>
+        </div>
+      </div>
+
+      <form id="composer" class="composer" autocomplete="off" novalidate>
+        <div class="composer__field">
+          <textarea
+            id="message-input"
+            class="composer__input"
+            rows="1"
+            maxlength="2000"
+            data-i18n-placeholder="inputPlaceholder"
+            placeholder="Сурооңузду жазыңыз…"
+            aria-label="Message"
+          ></textarea>
+          <span id="char-counter" class="composer__counter" aria-hidden="true"></span>
+        </div>
+        <button id="send-btn" class="btn btn--primary composer__send" type="submit" disabled>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z" fill="currentColor"/></svg>
+          <span class="composer__send-label" data-i18n="send">Жөнөтүү</span>
+        </button>
+      </form>
+    </main>
+
+    <footer class="app-footer">
+      <p data-i18n="footerDisclaimer">MedKyrgyz AI дарыгердин ордун баспайт.</p>
+    </footer>
+  </div>
+
+  <!-- Templates -->
+  <template id="welcome-template">
+    <section class="welcome">
+      <img class="welcome__icon" src="assets/logo.svg" alt="" width="56" height="56" />
+      <h2 class="welcome__title" data-i18n="welcomeTitle"></h2>
+      <p class="welcome__text" data-i18n="welcomeText"></p>
+      <p class="welcome__hint" data-i18n="suggestionsTitle"></p>
+      <div class="suggestions"></div>
+    </section>
+  </template>
+
+  <!-- Scripts: order matters (config -> i18n -> api -> app) -->
+  <script src="js/config.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
