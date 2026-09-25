@@ -1,0 +1,1 @@
+# MedKyrgyz-AI
