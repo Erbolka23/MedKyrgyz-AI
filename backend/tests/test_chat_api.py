@@ -55,3 +55,34 @@ def test_unknown_conversation_history_returns_404(client: TestClient) -> None:
     response = client.get("/conversations/does-not-exist/messages")
     assert response.status_code == 404
     assert response.json()["code"] == "conversation_not_found"
+
+
+def test_explicit_language_always_wins(client: TestClient) -> None:
+    # Russian text, Kyrgyz selected -> Kyrgyz answer; and vice versa.
+    ky = client.post("/chat", json={"message": "У меня болит голова", "language": "ky"}).json()
+    assert ky["language"] == "ky"
+    assert ky["answer"].startswith("Качантан бери")
+
+    ru = client.post("/chat", json={"message": "Башым ооруп жатат", "language": "ru"}).json()
+    assert ru["language"] == "ru"
+    assert ru["answer"].startswith("Как давно")
+
+
+def test_emergency_answer_uses_selected_language(client: TestClient) -> None:
+    body = client.post("/chat", json={"message": "Кокурогум катуу ооруп жатат", "language": "ru"}).json()
+    assert body["is_emergency"] is True
+    assert "Немедленно вызовите скорую помощь" in body["answer"]
+
+
+def test_auto_short_russian_is_answered_in_russian(client: TestClient) -> None:
+    body = client.post("/chat", json={"message": "Горло першит", "language": "auto"}).json()
+    assert body["language"] == "ru"
+
+
+def test_auto_undetermined_keeps_conversation_language(client: TestClient) -> None:
+    first = client.post("/chat", json={"message": "Горло першит", "language": "auto"}).json()
+    follow_up = client.post(
+        "/chat",
+        json={"message": "38", "language": "auto", "conversation_id": first["conversation_id"]},
+    ).json()
+    assert follow_up["language"] == "ru"

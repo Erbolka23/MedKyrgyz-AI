@@ -21,7 +21,7 @@ from app.core.prompts import DISCLAIMERS, build_system_prompt
 from app.database.repositories import ConversationRepository
 from app.models.conversation import Message, MessageRole
 from app.schemas.chat import ChatRequest, ChatResponse, ConversationHistory, MessageOut, RequestLanguage
-from app.services.language_service import detect_language
+from app.services.language_service import detect_language_or_none
 from app.services.llm_service import LLMMessage, LLMProvider
 from app.services.safety_service import AnswerGuard, EmergencyDetector
 
@@ -46,8 +46,9 @@ class ChatService:
     # ------------------------------------------------------------------ public
 
     def handle_message(self, request: ChatRequest) -> ChatResponse:
-        language = self._resolve_language(request)
-        conversation = self._repo.get_or_create(request.conversation_id, language)
+        existing = self._repo.get(request.conversation_id) if request.conversation_id else None
+        language = self._resolve_language(request, existing.language if existing else None)
+        conversation = existing or self._repo.create(language)
         emergency = self._emergency.check(request.message)
 
         if emergency.is_emergency:
@@ -97,10 +98,20 @@ class ChatService:
 
     # ----------------------------------------------------------------- helpers
 
-    def _resolve_language(self, request: ChatRequest) -> str:
-        if request.language == RequestLanguage.AUTO:
-            return detect_language(request.message, default=self._settings.default_language)
-        return request.language.value
+    def _resolve_language(self, request: ChatRequest, conversation_language: str | None) -> str:
+        """
+        Priority: 1) language explicitly selected by the user ("ky"/"ru");
+                  2) language detected from the message (only for "auto");
+                  3) language of the ongoing conversation;
+                  4) DEFAULT_LANGUAGE from settings.
+        """
+        if request.language != RequestLanguage.AUTO:
+            return request.language.value
+        return (
+            detect_language_or_none(request.message)
+            or conversation_language
+            or self._settings.default_language
+        )
 
     @staticmethod
     def _build_prompt(history: list[Message], message: str, language: str) -> list[LLMMessage]:
