@@ -39,6 +39,12 @@ class LLMServiceError(AppError):
     code = "llm_unavailable"
     message = "The AI service is temporarily unavailable. Please try again later."
 
+    def __init__(self, message: str | None = None, *, kind: str = "unknown") -> None:
+        super().__init__(message)
+        # Internal failure category (timeout, rate_limit, invalid_api_key, ...).
+        # Used for logging and tests only — the HTTP response stays `llm_unavailable`.
+        self.kind = kind
+
 
 class ConversationNotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND

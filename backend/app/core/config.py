@@ -8,7 +8,7 @@ Settings are read once from environment variables (optionally loaded from
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -22,6 +22,18 @@ load_dotenv(BACKEND_DIR / ".env")
 
 SUPPORTED_LANGUAGES: tuple[str, ...] = ("ky", "ru")
 SUPPORTED_PROVIDERS: tuple[str, ...] = ("auto", "openai", "mock")
+# Name of the request field that limits the answer length:
+#   auto                  -> max_completion_tokens for api.openai.com, max_tokens for
+#                            other OpenAI-compatible servers (Ollama, vLLM, ...)
+#   max_completion_tokens -> modern OpenAI models (gpt-4o*, o-series, gpt-5*)
+#   max_tokens            -> legacy parameter, still used by most compatible servers
+SUPPORTED_TOKEN_PARAMS: tuple[str, ...] = ("auto", "max_completion_tokens", "max_tokens")
+
+# The frontend aborts a request after 45 s (frontend/js/config.js). The whole LLM
+# call, retries included, must finish well before that, otherwise the browser gives
+# up while the backend keeps waiting for OpenAI.
+MAX_LLM_TIMEOUT_SECONDS: float = 40.0
+MAX_LLM_RETRIES: int = 3
 
 
 def _env_str(name: str, default: str) -> str:
@@ -91,12 +103,18 @@ class Settings:
     database_url: str
 
     llm_provider: str
-    openai_api_key: str | None
+    # repr=False: the key must never end up in logs or tracebacks.
+    openai_api_key: str | None = field(repr=False)
     openai_base_url: str | None
     openai_model: str
+    openai_token_param: str
     llm_temperature: float
     llm_max_tokens: int
+    # Total time budget for one answer, retries included.
     llm_timeout_seconds: float
+    llm_max_retries: int
+    # Rough prompt size limit (characters); oldest history is dropped beyond it.
+    llm_max_input_chars: int
 
     default_language: str
     history_limit: int
@@ -112,6 +130,10 @@ def get_settings() -> Settings:
     provider = _env_str("LLM_PROVIDER", "auto").lower()
     if provider not in SUPPORTED_PROVIDERS:
         provider = "auto"
+
+    token_param = _env_str("LLM_TOKEN_PARAM", "auto").lower()
+    if token_param not in SUPPORTED_TOKEN_PARAMS:
+        token_param = "auto"
 
     default_language = _env_str("DEFAULT_LANGUAGE", "ky").lower()
     if default_language not in SUPPORTED_LANGUAGES:
@@ -133,9 +155,14 @@ def get_settings() -> Settings:
         openai_api_key=_optional_secret("OPENAI_API_KEY"),
         openai_base_url=_optional_secret("OPENAI_BASE_URL"),
         openai_model=_env_str("OPENAI_MODEL", "gpt-4o-mini"),
-        llm_temperature=_env_float("LLM_TEMPERATURE", 0.3),
-        llm_max_tokens=_env_int("LLM_MAX_TOKENS", 600),
-        llm_timeout_seconds=_env_float("LLM_TIMEOUT_SECONDS", 30.0),
+        openai_token_param=token_param,
+        llm_temperature=min(2.0, max(0.0, _env_float("LLM_TEMPERATURE", 0.3))),
+        llm_max_tokens=max(1, _env_int("LLM_MAX_TOKENS", 600)),
+        llm_timeout_seconds=min(
+            MAX_LLM_TIMEOUT_SECONDS, max(1.0, _env_float("LLM_TIMEOUT_SECONDS", 30.0))
+        ),
+        llm_max_retries=min(MAX_LLM_RETRIES, max(0, _env_int("LLM_MAX_RETRIES", 1))),
+        llm_max_input_chars=max(1000, _env_int("LLM_MAX_INPUT_CHARS", 24000)),
         default_language=default_language,
         history_limit=max(0, _env_int("HISTORY_LIMIT", 10)),
     )
