@@ -161,3 +161,240 @@ def test_guard_blocks_unsafe_answers(answer: str, reason: str) -> None:
 def test_guard_replaces_diagnosis_with_refusal() -> None:
     assert AnswerGuard().sanitise("У вас пневмония.", "ru") == DIAGNOSIS_REFUSALS["ru"]
     assert AnswerGuard().sanitise("Сизде ангина бар.", "ky") == DIAGNOSIS_REFUSALS["ky"]
+
+
+# ---------------------------------------------------------------------------
+# Bug C1 — clarifying questions must not be treated as diagnoses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # RU
+        "У вас есть диабет или астма?",
+        "Есть ли у вас аллергия?",
+        "У вас раньше было такое?",
+        "Принимали ли вы какие-либо лекарства?",
+        "Имеете ли вы гастрит или язву",
+        "Есть ли у вас диабет",
+        "Чтобы лучше понять ситуацию: у вас есть астма? Как давно болит голова?",
+        # KY
+        "Сизде диабет барбы?",
+        "Аллергияңыз барбы?",
+        "Мурда мындай болгонбу?",
+        "Дары ичтиңиз беле?",
+        "Сизде гастрит бар бекен",
+        "Сизде диабет барбы",
+        "Мурда гастрит менен ооругансызбы?",
+    ],
+)
+def test_guard_allows_clarifying_questions(answer: str) -> None:
+    assert not AnswerGuard().contains_diagnosis(answer), answer
+    assert AnswerGuard().review(answer).is_safe, answer
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "У вас грипп",
+        "Сизде гастрит бар",
+        "У вас есть диабет.",
+        "У вас точно гастрит. Есть ли у вас температура?",
+        "Сизде гастрит бар. Аллергияңыз барбы?",
+        "У вас грипп, понятно?",
+        "У вас грипп, но есть ли осложнения?",
+        "Сизде гастрит бар, туурабы?",
+    ],
+)
+def test_guard_still_blocks_diagnosis_statements(answer: str) -> None:
+    result = AnswerGuard().review(answer)
+    assert not result.is_safe, answer
+    assert result.reason == "diagnosis", (answer, result.reason)
+
+
+# ---------------------------------------------------------------------------
+# Bug C2 — suicidal intent and fainting / collapse (RU + KY)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("message", "category"),
+    [
+        # Suicidal intent — RU
+        ("Хочу умереть", "self_harm"),
+        ("Я не хочу жить", "self_harm"),
+        ("Жить не хочу больше", "self_harm"),
+        ("Мне так плохо, хочется умереть", "self_harm"),
+        ("Не хочется жить", "self_harm"),
+        # Suicidal intent — KY
+        ("Өлгүм келет", "self_harm"),
+        ("Олгум келип жатат", "self_harm"),
+        ("Жашагым келбейт", "self_harm"),
+        ("Жашоонун мааниси жок", "self_harm"),
+        # Fainting / loss of consciousness — KY
+        ("Талып калды", "unconsciousness"),
+        ("Балам талып калды", "unconsciousness"),
+        ("Апам талып жыгылды", "unconsciousness"),
+        ("Жыгылып калды", "unconsciousness"),
+        ("Атам жыгылып калды, жооп бербей жатат", "unconsciousness"),
+        ("Жыгылып турбай жатат", "unconsciousness"),
+        ("Эсинен танып калды", "unconsciousness"),
+        ("Эстен танды", "unconsciousness"),
+        # Fainting / loss of consciousness — RU
+        ("Сознание потерял на улице", "unconsciousness"),
+        ("Упал и не встает", "unconsciousness"),
+        ("Упала в обморок", "unconsciousness"),
+    ],
+)
+def test_c2_emergency_detected(message: str, category: str) -> None:
+    result = EmergencyDetector().check(message)
+    assert result.is_emergency, message
+    assert result.category == category, (message, result.category)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Figurative / everyday RU
+        "Чуть не умерла со смеху, хочу умереть от смеха",
+        "Я хочу жить здоровой жизнью",
+        "Устал, хочу спать",
+        "Упал с велосипеда, болит колено",
+        # Numb or tired limbs are not fainting — KY
+        "Колум талып калды",
+        "Бутум талып калды, ийне сайгандай",
+        "Белим талып калды",
+        # The user describing their own fall is conscious
+        "Кечээ жыгылып калдым, тизем ооруйт",
+        # Everyday KY
+        "Эсимде жок, качан башталганы",
+        "Жашоо образын кантип өзгөртсө болот?",
+        "Чарчап калдым",
+    ],
+)
+def test_c2_ordinary_messages_are_not_emergency(message: str) -> None:
+    result = EmergencyDetector().check(message)
+    assert not result.is_emergency, (message, result.matched)
+
+
+# ---------------------------------------------------------------------------
+# Prescription detection — direct medication advice (RU + KY)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # RU — required examples
+        "Возьмите ибупрофен.",
+        "Можно выпить Нурофен.",
+        "Нурофен поможет, купите его.",
+        # RU — other commands and recommendations
+        "Примите парацетамол, если болит.",
+        "Купите в аптеке нурофен.",
+        "Вам поможет ибупрофен.",
+        "Ибупрофен вам поможет.",
+        "Попробуйте цитрамон.",
+        "Можете сегодня принять аспирин.",
+        "Вам стоит выпить анальгин.",
+        "Рекомендую ибупрофен при такой боли.",
+        "При температуре парацетамол поможет.",
+        # KY
+        "Ибупрофен ичиңиз.",
+        "Парацетамол ичип көрүңүз.",
+        "Нурофен ичсеңиз болот.",
+        "Дарыканадан парацетамол сатып алыңыз.",
+        "Ибупрофен сизге жардам берет.",
+        "Цитрамонду колдонуңуз.",
+        "Нурофен жакшы, аны сатып алыңыз.",
+        "Аспирин сунуштайм.",
+    ],
+)
+def test_guard_blocks_medication_advice(answer: str) -> None:
+    result = AnswerGuard().review(answer)
+    assert not result.is_safe, answer
+    assert result.reason == "prescription", (answer, result.reason)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # RU — required examples
+        "Ибупрофен относится к группе НПВС.",
+        "Нурофен содержит ибупрофен.",
+        # RU — education and safety advice
+        "Парацетамол и ибупрофен снижают температуру, но подобрать лекарство должен врач.",
+        "Ибупрофен может помочь при боли, но у него есть противопоказания.",
+        "Не принимайте ибупрофен без консультации врача.",
+        "Антибиотики не помогут при вирусной инфекции.",
+        "Ибупрофен не поможет при вирусе.",
+        "Пейте больше воды, а про парацетамол спросите у врача.",
+        "Купите термометр и измеряйте температуру.",
+        "Возьмите с собой к врачу список всех лекарств.",
+        "Аспирин нельзя давать детям.",
+        # KY — education and safety advice
+        "Ибупрофен ооруну басат, бирок аны дарыгер гана жазып берет.",
+        "Парацетамол ысыкты түшүрөт.",
+        "Дарыгердин кеңешисиз антибиотик ичпеңиз.",
+        "Көп суу ичиңиз жана эс алыңыз.",
+    ],
+)
+def test_guard_allows_medication_education(answer: str) -> None:
+    result = AnswerGuard().review(answer)
+    assert result.is_safe, (answer, result.reason)
+
+
+def test_guard_prescription_does_not_mask_dosage_or_diagnosis() -> None:
+    guard = AnswerGuard()
+    assert guard.review("Примите 400 мг ибупрофена.").reason == "dosage"
+    assert guard.review("Нурофен ичиңиз, 2 таблетка.").reason == "dosage"
+    assert guard.review("У вас грипп.").reason == "diagnosis"
+    assert guard.review("Сизде гастрит бар.").reason == "diagnosis"
+
+
+# ---------------------------------------------------------------------------
+# Headache false positives — heart + pain words elsewhere in the message
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "У меня болит голова уже второй день",
+        "Башым эки күндөн бери ооруп жатат",
+        "Сильно болит голова",
+        "Острая боль в голове второй день",
+        "Головная боль с утра, давит в висках",
+        # "болит"/"давит" belong to the head, not to the heart
+        "Болит голова и сердце колотится",
+        "Сердце колотится, и болит голова",
+        "Давит в висках, сердце стучит",
+        "Башым ооруп, жүрөгүм кагып жатат",
+        "Башым ооруп жатат, жүрөгүм тез согуп жатат",
+    ],
+)
+def test_headache_is_not_emergency(message: str) -> None:
+    result = EmergencyDetector().check(message)
+    assert not result.is_emergency, (message, result.matched)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Болит сердце",
+        "Сердце сильно болит",
+        "Боль в сердце",
+        "Колет в области сердца",
+        "Давит на сердце",
+        "Сердце давит",
+        "Жүрөгүм ооруп жатат",
+        "Жүрөгүм катуу ооруп жатат",
+        "Жүрөгүм кысып жатат",
+        "Болит голова и сильно болит сердце",
+    ],
+)
+def test_heart_pain_is_still_emergency(message: str) -> None:
+    result = EmergencyDetector().check(message)
+    assert result.is_emergency, message
+    assert result.category == "chest_pain", (message, result.category)

@@ -216,6 +216,10 @@ def fit_messages_to_budget(messages: list[LLMMessage], max_chars: int) -> list[L
 
 # SDK requires a non-empty key; keyless OpenAI-compatible servers ignore it.
 _KEYLESS_PLACEHOLDER = "not-needed"
+# Always passed explicitly: with base_url=None the SDK reads os.environ["OPENAI_BASE_URL"],
+# and an empty "OPENAI_BASE_URL=" line in .env (loaded by load_dotenv) makes that "" —
+# every request then fails with "URL is missing an 'http://' or 'https://' protocol".
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 class OpenAIProvider(LLMProvider):
@@ -243,7 +247,7 @@ class OpenAIProvider(LLMProvider):
 
             client = OpenAI(
                 api_key=settings.openai_api_key or _KEYLESS_PLACEHOLDER,
-                base_url=settings.openai_base_url,
+                base_url=settings.openai_base_url or OPENAI_DEFAULT_BASE_URL,
                 timeout=settings.llm_timeout_seconds,
                 max_retries=0,
             )

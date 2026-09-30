@@ -506,3 +506,25 @@ def test_chat_works_with_openai_provider(client: TestClient, monkeypatch: pytest
     response = client.post("/chat", json={"message": "Башым ооруп жатат"})
     assert response.status_code == 200
     assert response.json()["answer"].startswith("Качантан бери")
+
+
+# ------------------------------------ empty OPENAI_BASE_URL (503 regression)
+
+
+def test_empty_base_url_env_uses_official_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `.env` line "OPENAI_BASE_URL=" is loaded by load_dotenv as "". With base_url=None
+    # the SDK would read that "" and every request failed with APIConnectionError -> 503.
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    provider = OpenAIProvider(make_settings(openai_base_url=None))
+    assert str(provider._client.base_url).startswith("https://api.openai.com/v1")
+
+
+def test_custom_base_url_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    provider = OpenAIProvider(make_settings(openai_base_url="http://localhost:11434/v1"))
+    assert str(provider._client.base_url).startswith("http://localhost:11434/v1")
+
+
+def test_empty_base_url_env_is_not_set_in_settings(monkeypatch: pytest.MonkeyPatch, fresh_settings: None) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    assert get_settings().openai_base_url is None

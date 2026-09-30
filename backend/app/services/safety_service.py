@@ -70,6 +70,16 @@ SEVERE_PAIN = (
     rf"|\bоору\w*\s+{_GAP}?(?:катуу|чыдагыс\w*)"
 )
 PRESSING = r"\b(?:давит|давящ\w*|сдавлив\w*|сжима\w*|жжет|жжени\w*|жгуч\w*|кыс(?:ып|ат|ылып|ылат)\w*|ачыш\w*)"
+# Heart pain only when the pain/pressure word belongs to the heart ("сердце сильно
+# болит", "боль в сердце", "давит на сердце", "журогум катуу ооруп"). Matching the
+# two words anywhere in the message flagged "болит голова и сердце колотится".
+_INTENSIFIER = r"(?:(?:сильно|очень|резко|остро|немного|опять|снова|катуу|аябай|абдан|кайра)\s+)"
+HEART_PAIN = (
+    rf"{HEART}\s+{_INTENSIFIER}{{0,2}}(?:{PAIN}|{PRESSING})"
+    # Pain word first is Russian word order only ("болит сердце"); in Kyrgyz the heart
+    # comes first, so "башым ооруп журогум кагып" is two separate complaints.
+    rf"|(?:{PAIN}|{PRESSING})\s+{_INTENSIFIER}?(?:(?:в|на|под|около|возле)\s+)?(?:области\s+)?\bсердц(?:е|а|у|ем)\b"
+)
 SUDDEN = r"\b(?:внезапн\w*|вдруг|неожиданно|капыстан|кокусунан|кутулбогон\s+жерден)"
 
 BREATHING_SEVERE = (
@@ -96,13 +106,11 @@ class EmergencyRule:
 EMERGENCY_RULES: tuple[EmergencyRule, ...] = (
     EmergencyRule(
         "chest_pain",
-        phrases=(r"\bинфаркт\w*", r"\bсердечн\w*\s+приступ\w*"),
+        phrases=(r"\bинфаркт\w*", r"\bсердечн\w*\s+приступ\w*", HEART_PAIN),
         combinations=(
             (CHEST, SEVERE_PAIN),
             (CHEST, PRESSING),
             (CHEST, PAIN, BREATHING_ANY),
-            (HEART, PAIN),
-            (HEART, PRESSING),
         ),
     ),
     EmergencyRule("breathing", phrases=(BREATHING_SEVERE,)),
@@ -111,8 +119,16 @@ EMERGENCY_RULES: tuple[EmergencyRule, ...] = (
         phrases=(
             r"\b(?:потерял\w*|потер\w*|теря\w*|терял\w*)\s+(?:\w+\s+)?сознани\w*",
             r"\bбез\s+сознания|\bобморок\w*|\bне\s+приходит\s+в\s+себя",
-            r"\bэс\w*\s+(?:учун\s+)?жогот\w*|\bэсинен\s+тан\w*|\bэс(?:и|им)\s+оо\w*",
+            r"\bсознани\w*\s+(?:\w+\s+)?(?:потерял\w*|теря\w*)|\bне\s+приходит\s+в\s+сознани\w*",
+            r"\bупал\w*\s+и\s+не\s+(?:встает|двигается|отвечает|реагирует|дышит)",
+            r"\bэс\w*\s+(?:учун\s+)?жогот\w*|\b(?:эсинен|эстен|эсимден)\s+тан\w*|\bэс(?:и|им)\s+оо\w*",
             r"\bэсине\s+келбей\w*|\bэс\s+учу\s+жок",
+            # "талып калды" = fainted; "колум талып калды" (numb arm) is excluded below
+            r"\bталып\s+(?:калды|калдым|калган\w*|кетти|кеттим|жыгыл\w*)",
+            # "жыгылып калды" = (someone) collapsed; first person "калдым" is not
+            # included: a user who writes about their own fall is conscious.
+            r"\bжыгылып\s+(?:калды|калган\w*|кетти)\b",
+            r"\bжыгылып\s+(?:\w+\s+)?(?:турбай|козгол\w*\s+жок|кыймылдабай)\w*",
         ),
     ),
     EmergencyRule(
@@ -177,9 +193,12 @@ EMERGENCY_RULES: tuple[EmergencyRule, ...] = (
         phrases=(
             r"\bпокончить\s+с\s+собой|\bпокончу\s+с\s+собой|\bсуицид\w*",
             r"\bне\s+хочу\s+(?:больше\s+)?жить|\bубить\s+себя|\bубью\s+себя",
+            r"\b(?:хочу|хочется|хотел\w*\s+бы)\s+(?:\w+\s+)?умереть|\bжить\s+не\s+хочу|\bне\s+хочется\s+жить",
+            r"\bлучше\s+бы\s+я\s+умер\w*|\bпокончить\s+с\s+жизнью",
             r"\bсвести\s+счеты\s+с\s+жизнью|\bналожить\s+на\s+себя\s+руки",
             r"\bозумду\s+(?:\w+\s+)?олтур\w*|\bозумо\s+кол\s+сал\w*",
-            r"\bжашагым\s+келбей\w*|\bолгум\s+келет",
+            r"\bжашагым\s+келбей\w*|\bолгум\s+кел\w*|\bолуп\s+калгым\s+кел\w*",
+            r"\bжашоонун\s+(?:эч\s+)?мааниси\s+жок",
         ),
     ),
     EmergencyRule(
@@ -207,6 +226,10 @@ EMERGENCY_EXCLUSIONS: tuple[str, ...] = (
     r"\bмур(?:ун|д)\w*\s+(?:менен\s+)?дем\s+ал\w*\s+(?:\w+\s+)?(?:албай|кыйын)\w*",
     r"\bсудорог\w*\s+(?:в\s+)?(?:\w+\s+)?(?:ног\w*|икр\w*|пальц\w*|стоп\w*|мышц\w*)",
     r"\b(?:ног\w*|икр\w*)\s+(?:\w+\s+)?судорог\w*",
+    # "колум/бутум талып калды" = a limb went numb or tired, not fainting
+    r"\b(?:кол|бут|бел|моюн|тизе|далы|ийин|бармак|манда|кара\s+жилик)\w*\s+(?:\w+\s+)?талып\s+\w+",
+    # figurative "умереть": "хочу умереть от смеха/стыда"
+    r"\bумереть\s+(?:со\s+)?(?:от\s+)?(?:смеха|скуки|стыда)",
 )
 
 
@@ -295,9 +318,33 @@ _MED_CONTEXT = re.compile(
     rf"\b(?:лекарств\w*|препарат\w*|таблет\w*|капсул\w*|сироп\w*|раствор\w*|дары\w*|дарын\w*"
     rf"|укол\w*|инъекци\w*|свеч\w*|маз\w*|{_DRUG_NAMES})"
 )
-# Direct instruction to take a specific drug: "примите парацетамол", "ибупрофен ичиниз".
-_TAKE_VERB = r"(?<!не )\b(?:примите|принимайте|выпейте|пейте|колите|используйте|ичиниз|ичип\s+турунуз|ичсениз\s+болот|кабыл\s+алыныз)"
-_PRESCRIPTION = re.compile(rf"{_TAKE_VERB}\s+(?:\w+\s+)?{_DRUG_NAMES}|\b{_DRUG_NAMES}\s+(?:\w+\s+)?{_TAKE_VERB}")
+# Direct advice to take / buy a specific drug: "примите парацетамол", "можно выпить нурофен",
+# "вам поможет ибупрофен", "ибупрофен ичиниз", "парацетамол сатып алыныз".
+# Negated forms ("не принимайте", "не поможет") are safety advice and are not matched.
+_TAKE_VERB = (
+    r"(?<!не )\b(?:"
+    # RU — commands
+    r"примите|принимайте|возьмите|выпейте|пейте|колите|уколите|используйте|попробуйте"
+    r"|купите|приобретите|закапайте|нанесите"
+    # RU — recommendations
+    r"|можно\s+(?:вам\s+)?(?:выпить|принять|взять|использовать|попробовать|купить)"
+    r"|можете\s+(?:\w+\s+)?(?:выпить|принять|взять|использовать|попробовать|купить)"
+    r"|(?:вам\s+)?(?:нужно|надо|следует|стоит)\s+(?:выпить|принять|купить|попробовать)"
+    r"|(?:вам\s+)?(?:поможет|помогут)|рекомендую|советую|назначаю"
+    # KY
+    r"|ичиниз|ичип\s+(?:турунуз|корунуз)|ичсе(?:низ)?\s+болот|ичуу(?:нуз)?\s+керек|ичишиниз\s+керек"
+    r"|кабыл\s+алыныз|сатып\s+алыныз|колдонунуз|колдонсонуз\s+болот|сайдырыныз"
+    r"|сизге\s+(?:\w+\s+)?жардам\s+бер\w*|сунуштайм|сунуш\s+кылам"
+    r")\b"
+)
+# Verb and drug within 3 words of each other and in the same clause (punctuation
+# is kept, so "Пейте воду, а ибупрофен ..." does not connect the two).
+_NEAR = r"\s+(?:\w+\s+){0,3}"
+_PRESCRIPTION = re.compile(rf"{_TAKE_VERB}{_NEAR}{_DRUG_NAMES}|\b{_DRUG_NAMES}{_NEAR}{_TAKE_VERB}")
+# The drug is named earlier in the sentence and the command refers to it by a pronoun:
+# "Нурофен поможет, купите его", "Нурофен жакшы, аны сатып алыныз".
+_PRESCRIPTION_PRONOUN = re.compile(rf"{_TAKE_VERB}\s+(?:его|ее|их)\b|\b(?:аны|аларды)\s+{_TAKE_VERB}")
+_DRUG = re.compile(rf"\b{_DRUG_NAMES}")
 
 _DISEASES = (
     r"(?:грипп|ангин|пневмони|бронхит|гастрит|мигрен|диабет|гипертони|инфаркт|инсульт|аппендицит"
@@ -325,6 +372,33 @@ _DIAGNOSIS = re.compile(
 )
 
 _SENTENCE_SPLIT = re.compile(r"[!?;\n]+|\.(?!\d)")
+# A sentence together with its closing punctuation, so that "?" is kept.
+_SENTENCE = re.compile(r"[^.!?;\n]+[.!?;\n]*")
+# Clauses joined by a conjunction are judged separately, so a statement cannot
+# hide inside a question: "У вас грипп, но есть ли осложнения?"
+_CLAUSE_SPLIT = re.compile(r",\s*(?=(?:и|а|но|поэтому|так\s+что|однако|бирок|ошондуктан|анткени)\b)")
+
+# Clarifying questions ("У вас есть диабет?", "Сизде диабет барбы?") mention a
+# disease but do not state it, so they are not diagnoses. For normalised text.
+_QUESTION_MARKERS = re.compile(
+    # RU: the particle "ли" ("есть ли", "имеете ли", "принимали ли")
+    r"\bли\b"
+    # KY: "барбы", "жокпу", "бар бекен", "беле", "болгонбу", "ооруйсузбу", "ичесизби"
+    r"|\b(?:барбы|жокпу|бекен|беле)\b"
+    r"|\b\w+(?:ган|гон|кан|кон|дын|дин|дун|тын|тин|тун|ды|ди|ду|ты|ти|ту)(?:бы|би|бу|пы|пи|пу)\b"
+    r"|\b\w+(?:сыз|сиз|суз)(?:бы|би|бу|пы|пи|пу)\b"
+)
+# Tag questions turn a statement into a pseudo-question: "У вас грипп, понятно?"
+_TAG_QUESTION = re.compile(
+    r",\s*(?:понятно|ясно|хорошо|да|верно|правда|не\s+так\s+ли|согласны|туурабы|макулбу|тушундунузбу)\s*\?+\s*$"
+)
+
+
+def _is_question(sentence: str) -> bool:
+    """True if a sentence (normalised, with punctuation) asks rather than states."""
+    if _TAG_QUESTION.search(sentence):
+        return False
+    return sentence.rstrip().endswith("?") or bool(_QUESTION_MARKERS.search(sentence))
 
 
 @dataclass(frozen=True)
@@ -350,13 +424,33 @@ class AnswerGuard:
 
     @staticmethod
     def contains_prescription(answer: str) -> bool:
-        """True if the answer tells the user to take a specific named drug."""
-        return bool(_PRESCRIPTION.search(normalise_text(answer)))
+        """True if the answer tells the user to take or buy a specific named drug."""
+        text = normalise_text(answer, keep_punctuation=True)
+        if _PRESCRIPTION.search(text):
+            return True
+        return any(
+            _PRESCRIPTION_PRONOUN.search(sentence) and _DRUG.search(sentence)
+            for sentence in _SENTENCE_SPLIT.split(text)
+        )
 
     @staticmethod
     def contains_diagnosis(answer: str) -> bool:
-        """True if the answer states a categorical diagnosis or claims to be a doctor."""
-        return bool(_DIAGNOSIS.search(normalise_text(answer)))
+        """True if the answer states a categorical diagnosis or claims to be a doctor.
+
+        Checked sentence by sentence: a clarifying question about a condition
+        ("Сизде диабет барбы?") is allowed, a statement ("Сизде гастрит бар") is not.
+        """
+        text = normalise_text(answer, keep_punctuation=True)
+        for sentence in _SENTENCE.findall(text):
+            clauses = _CLAUSE_SPLIT.split(sentence)
+            for i, clause in enumerate(clauses):
+                if i < len(clauses) - 1:
+                    clause += "."  # a final "?" belongs to the last clause only
+                if _is_question(clause):
+                    continue
+                if _DIAGNOSIS.search(normalise_text(clause)):
+                    return True
+        return False
 
     def review(self, answer: str) -> GuardResult:
         if self.contains_dosage(answer):
